@@ -1,7 +1,7 @@
 import { useContext } from 'react'
 import { message } from 'antd'
-import { objectKeys } from '@/typings/helpers'
 import { updateConfig } from '@/_helpers/config-manager'
+import { hasConfiguredDictAuth } from '@/_helpers/dict-auth'
 import { useTranslate } from '@/_helpers/i18n'
 import { useStore } from '@/content/redux'
 import { ChangeEntryContext } from './change-entry'
@@ -21,11 +21,7 @@ export const useCheckDictAuth = () => {
         showedDictAuth: true
       })
 
-      if (
-        objectKeys(config.dictAuth).every(id =>
-          objectKeys(config.dictAuth[id]).every(k => !config.dictAuth[id]?.[k])
-        )
-      ) {
+      if (!hasConfiguredDictAuth(config.dictAuth)) {
         message.warning(t('msg_first_time_notice'), 10)
         changeEntry('DictAuths')
         return false

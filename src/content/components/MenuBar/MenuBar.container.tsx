@@ -15,8 +15,8 @@ import { newWord } from '@/_helpers/record-manager'
 import { message } from '@/_helpers/browser-api'
 import { MenuBar, MenuBarProps } from './MenuBar'
 import { updateConfig } from '@/_helpers/config-manager'
+import { hasConfiguredDictAuth } from '@/_helpers/dict-auth'
 import { timer } from '@/_helpers/promise-more'
-import { objectKeys } from '@/typings/helpers'
 
 type Dispatchers = ExtractDispatchers<
   MenuBarProps,
@@ -139,11 +139,7 @@ const mapDispatchToProps: MapDispatchToPropsFunction<
           showedDictAuth: true
         })
 
-        if (
-          objectKeys(dictAuth).every(id =>
-            objectKeys(dictAuth[id]).every(k => !dictAuth[id]?.[k])
-          )
-        ) {
+        if (!hasConfiguredDictAuth(dictAuth)) {
           message.send({
             type: 'OPEN_URL',
             payload: {
