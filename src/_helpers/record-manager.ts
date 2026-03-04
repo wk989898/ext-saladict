@@ -63,7 +63,6 @@ export async function deleteWords(
   area: DBArea,
   dates?: number[]
 ): Promise<void> {
-  await message.send({ type: 'SYNC_SERVICE_DOWNLOAD' })
   await message.send({ type: 'DELETE_WORDS', payload: { area, dates } })
 }
 

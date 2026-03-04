@@ -1,9 +1,9 @@
-import DOMPurify from 'dompurify'
-import { useEffect, useRef } from 'react'
-import { useSubscription, useObservableCallback } from 'observable-hooks'
-import { debounceTime, map, tap } from 'rxjs/operators'
-import { Observable } from 'rxjs'
+// MV3: DOMPurify cannot run in a Service Worker (no DOM).
+// Use lightweight manual sanitization instead.
+// NOTE: React hooks moved to helpers-react.ts to avoid pulling React into
+// the Service Worker (which has no `window`).
 import AxiosMockAdapter from 'axios-mock-adapter'
+import { Observable } from 'rxjs'
 import { DictID, AppConfig } from '@/app-config'
 import { Profile } from '@/app-config/profiles'
 import { Word } from '@/_helpers/record-manager'
@@ -109,17 +109,17 @@ export async function getChsToChz(
  * Get the textContent of a node or its child.
  */
 export function getText(
-  parent: ParentNode | null,
+  parent: { querySelector(selector: string): any } | null,
   selector?: string,
   transform?: null | ((text: string) => string)
 ): string
 export function getText(
-  parent: ParentNode | null,
+  parent: { querySelector(selector: string): any } | null,
   transform?: null | ((text: string) => string),
   selector?: string
 ): string
 export function getText(
-  parent: ParentNode | null,
+  parent: { querySelector(selector: string): any } | null,
   ...args:
     | [string?, (null | ((text: string) => string))?]
     | [(null | ((text: string) => string))?, string?]
@@ -149,6 +149,15 @@ export function getText(
   return transform ? transform(textContent) : textContent
 }
 
+/** Lightweight sanitization config (replaces DOMPurify.Config for MV3) */
+export interface SanitizeConfig {
+  FORBID_TAGS?: string[]
+  FORBID_ATTR?: string[]
+  // Backward-compatible fields kept for existing callers.
+  ADD_TAGS?: string[]
+  ADD_ATTR?: string[]
+}
+
 export interface GetHTMLConfig {
   /** innerHTML or outerHTML */
   mode?: 'innerHTML' | 'outerHTML'
@@ -158,28 +167,36 @@ export interface GetHTMLConfig {
   transform?: null | ((text: string) => string)
   /** Give url and src a host */
   host?: string
-  /** DOM Purify config */
-  config?: DOMPurify.Config
+  /** Sanitize config */
+  config?: SanitizeConfig
 }
 
-const defaultDOMPurifyConfig: DOMPurify.Config = {
-  FORBID_TAGS: ['style'],
+const defaultSanitizeConfig: SanitizeConfig = {
+  FORBID_TAGS: ['style', 'script'],
   FORBID_ATTR: ['style']
 }
 
+/**
+ * Strip dangerous HTML tags (script, etc.) from a string.
+ * Lightweight replacement for DOMPurify.sanitize() in Service Worker.
+ */
+export function stripScriptTags(html: string): string {
+  return html
+    .replace(/<script[\s>][\s\S]*?<\/script>/gi, '')
+    .replace(/<\/script>/gi, '')
+}
+
 export function getHTML(
-  parent: ParentNode,
+  parent: any,
   {
     mode = 'innerHTML',
     selector,
     transform,
     host,
-    config = defaultDOMPurifyConfig
+    config = defaultSanitizeConfig
   }: GetHTMLConfig = {}
 ): string {
-  const node = selector
-    ? parent.querySelector<HTMLElement>(selector)
-    : (parent as HTMLElement)
+  const node = selector ? parent.querySelector(selector) : (parent as any)
   if (!node) {
     return ''
   }
@@ -209,19 +226,31 @@ export function getHTML(
     node.querySelectorAll('img').forEach(fillLink)
   }
 
-  const fragment = DOMPurify.sanitize(node, {
-    ...config,
-    RETURN_DOM_FRAGMENT: true
-  })
+  // MV3: Manual sanitization instead of DOMPurify (no DOM in Service Worker)
+  const forbidTags = config.FORBID_TAGS || []
+  const forbidAttrs = config.FORBID_ATTR || []
 
-  const content = fragment.firstChild ? fragment.firstChild[mode] : ''
+  for (const tag of forbidTags) {
+    node.querySelectorAll(tag).forEach((el: any) => {
+      if (el.remove) el.remove()
+      else if (el.parentNode) el.parentNode.removeChild(el)
+    })
+  }
+
+  for (const attr of forbidAttrs) {
+    node.querySelectorAll('[' + attr + ']').forEach((el: any) => {
+      el.removeAttribute(attr)
+    })
+  }
+
+  const content = node[mode] || ''
 
   return transform ? transform(content) : content
 }
 
 export function getInnerHTML(
   host: string,
-  parent: ParentNode,
+  parent: any,
   selectorOrConfig: string | Omit<GetHTMLConfig, 'mode' | 'host'> = {}
 ) {
   return getHTML(
@@ -234,7 +263,7 @@ export function getInnerHTML(
 
 export function getOuterHTML(
   host: string,
-  parent: ParentNode,
+  parent: any,
   selectorOrConfig: string | Omit<GetHTMLConfig, 'mode' | 'host'> = {}
 ) {
   return getHTML(
@@ -248,7 +277,7 @@ export function getOuterHTML(
 /**
  * Remove a child node from a parent node
  */
-export function removeChild(parent: ParentNode, selector: string) {
+export function removeChild(parent: any, selector: string) {
   const child = parent.querySelector(selector)
   if (child) {
     child.remove()
@@ -258,7 +287,7 @@ export function removeChild(parent: ParentNode, selector: string) {
 /**
  * Remove all the matching child nodes from a parent node
  */
-export function removeChildren(parent: ParentNode, selector: string) {
+export function removeChildren(parent: any, selector: string) {
   parent.querySelectorAll(selector).forEach(el => el.remove())
 }
 
@@ -275,12 +304,16 @@ export function decodeHEX(text: string): string {
  * Will jump to the website instead of searching
  * when clicking on the dict panel
  */
-export function externalLink($a: HTMLElement) {
+export function externalLink($a: any) {
   $a.setAttribute('target', '_blank')
   $a.setAttribute('rel', 'nofollow noopener noreferrer')
 }
 
-export function getFullLink(host: string, el: Element, attr: string): string {
+export function getFullLink(
+  host: string,
+  el: { getAttribute(attr: string): string | null },
+  attr: string
+): string {
   if (host.endsWith('/')) {
     host = host.slice(0, -1)
   }
@@ -305,43 +338,4 @@ export function getFullLink(host: string, el: Element, attr: string): string {
   }
 
   return host + '/' + link
-}
-
-/**
- * Horizontally scroll a list of items
- * React event listener doesn't support passive arguemnt.
- */
-export const useHorizontalScroll = <T extends HTMLElement>() => {
-  const [onWheel, onWHeel$] = useObservableCallback(_useHorizontalScrollOnWheel)
-  useSubscription(onWHeel$)
-
-  const tabsRef = useRef<T>(null)
-  useEffect(() => {
-    if (tabsRef.current) {
-      // take the node out for cleaning up
-      const node = tabsRef.current
-      node.addEventListener('wheel', onWheel, { passive: false })
-      return () => {
-        node.removeEventListener('wheel', onWheel)
-      }
-    }
-  }, [tabsRef.current])
-
-  return tabsRef
-}
-function _useHorizontalScrollOnWheel(event$: Observable<WheelEvent>) {
-  return event$.pipe(
-    map(e => {
-      e.stopPropagation()
-      e.preventDefault()
-      return [e.currentTarget, e.deltaY] as [HTMLElement, number]
-    }),
-    debounceTime(80),
-    tap(([node, deltaY]) => {
-      node.scrollBy({
-        left: deltaY > 0 ? 250 : -250,
-        behavior: 'smooth'
-      })
-    })
-  )
 }

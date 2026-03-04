@@ -77,22 +77,23 @@ export const StaticSpeakerContainer: FC<StaticSpeakerContainerProps> = props => 
 
   const onClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as EventTarget | null
       if (
-        e.target &&
-        isTagName(e.target, 'a') &&
-        e.target['href'] &&
-        e.target['href'] !== '#' &&
-        e.target['classList'] &&
-        e.target['classList'].contains('saladict-Speaker')
+        target &&
+        isTagName(target as any, 'a') &&
+        (target as any)['href'] &&
+        (target as any)['href'] !== '#' &&
+        (target as any)['classList'] &&
+        (target as any)['classList'].contains('saladict-Speaker')
       ) {
         e.preventDefault()
         e.stopPropagation()
 
-        const target = e.target as HTMLAnchorElement
-        target.classList.add('isActive')
+        const anchor = target as HTMLAnchorElement
+        anchor.classList.add('isActive')
 
-        reflect([timer(1000), onPlayStart(target.href)]).then(() => {
-          target.classList.remove('isActive')
+        reflect([timer(1000), onPlayStart(anchor.href)]).then(() => {
+          anchor.classList.remove('isActive')
         })
       }
     },
@@ -109,16 +110,27 @@ export const StaticSpeakerContainer: FC<StaticSpeakerContainerProps> = props => 
 /**
  * Returns a anchor element
  */
-export const getStaticSpeaker = (src?: string | null) => {
+export const getStaticSpeaker = (src?: string | null): any => {
   if (!src) {
     return ''
   }
 
-  const $a = document.createElement('a')
-  $a.target = '_blank'
-  $a.href = src
-  $a.className = 'saladict-Speaker'
-  return $a
+  if (typeof document !== 'undefined') {
+    const $a = document.createElement('a')
+    $a.target = '_blank'
+    $a.href = src
+    $a.className = 'saladict-Speaker'
+    return $a
+  }
+
+  // MV3: Service Worker – document is unavailable.
+  // Return a node-html-parser element so that callers using
+  // replaceWith() keep working.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { parse } = require('node-html-parser')
+  return parse(
+    `<a href="${src}" target="_blank" rel="noopener noreferrer" class="saladict-Speaker"></a>`
+  )
 }
 
 /**

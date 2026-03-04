@@ -1,3 +1,4 @@
+import { parse } from 'node-html-parser'
 import { fetchDirtyDOM } from '@/_helpers/fetch-dom'
 import {
   handleNoResult,
@@ -100,10 +101,10 @@ export const search: SearchFunction<BingResult> = (
         return handleMachineResult(doc, transform)
       }
 
-      if (bingConfig.options.related) {
-        if (doc.querySelector('.client_do_you_mean_title_bar')) {
-          return handleRelatedResult(doc, bingConfig, transform)
-        }
+      // "Did you mean" suggestions are the only useful content when lex/machine
+      // results are empty — show them unconditionally.
+      if (doc.querySelector('.client_do_you_mean_title_bar')) {
+        return handleRelatedResult(doc, bingConfig, transform)
       }
 
       return handleNoResult<DictSearchResult<BingResult>>()
@@ -193,15 +194,18 @@ function handleLexResult(
         ])[0]
       }
       el.querySelectorAll('.client_sen_en_word').forEach($word => {
-        $word.outerHTML = getText($word)
+        // MV3: node-html-parser outerHTML is read-only; use replaceWith
+        ;($word as any).replaceWith(parse(getText($word)) as any)
       })
       el.querySelectorAll('.client_sen_cn_word').forEach($word => {
-        $word.outerHTML = getText($word, transform)
+        ;($word as any).replaceWith(parse(getText($word, transform)) as any)
       })
       el.querySelectorAll('.client_sentence_search').forEach($word => {
-        $word.outerHTML = `<span class="dictBing-SentenceItem_HL">${getText(
-          $word
-        )}</span>`
+        ;($word as any).replaceWith(
+          parse(
+            `<span class="dictBing-SentenceItem_HL">${getText($word)}</span>`
+          ) as any
+        )
       })
       sentences.push({
         en: getInnerHTML(HOST, el, '.client_sen_en'),

@@ -137,8 +137,10 @@ export const MachineTrans: FC<MachineTransProps> = props => {
     MachineTransProps['result']['slInitial']
   >(props.result.slInitial)
 
-  useSubscription(props.catalogSelect$, ({ key, value }) => {
-    switch (key) {
+  useSubscription<{ key: string; value: string }>(
+    props.catalogSelect$,
+    ({ key, value }) => {
+      switch (key) {
       case 'showSl':
         setSlState('full')
         break
@@ -167,8 +169,9 @@ export const MachineTrans: FC<MachineTransProps> = props => {
         break
       default:
         break
+      }
     }
-  })
+  )
 
   if (props.result.requireCredential) {
     return renderCredential()

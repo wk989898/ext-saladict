@@ -2,6 +2,26 @@ import { message } from '@/_helpers/browser-api'
 import { Subject } from 'rxjs'
 import { switchMapBy } from '@/_helpers/observables'
 import { timer } from '@/_helpers/promise-more'
+import { getAppConfig } from './state'
+
+// Static imports of all locale background files
+import { locale as localeEn } from '@/_locales/en/background'
+import { locale as localeZhCN } from '@/_locales/zh-CN/background'
+import { locale as localeZhTW } from '@/_locales/zh-TW/background'
+import { locale as localeEs } from '@/_locales/es/background'
+import { locale as localeNe } from '@/_locales/ne/background'
+
+const locales: Record<string, typeof localeZhCN> = {
+  en: localeEn,
+  'zh-CN': localeZhCN,
+  'zh-TW': localeZhTW,
+  es: localeEs,
+  ne: localeNe
+}
+
+function getLocale() {
+  return locales[getAppConfig().langCode] || locales.en
+}
 
 interface UpdateBadgeOptions {
   active: boolean
@@ -33,7 +53,7 @@ onUpdated$
             type: 'GET_TAB_BADGE_INFO'
           })
           .catch(() => {})) || {
-          active: window.appConfig.active,
+          active: getAppConfig().active,
           tempDisable: false,
           unsupported: true
         }
@@ -73,60 +93,58 @@ export function initBadge() {
 
 function setOff(tabId: number) {
   setIcon(true, tabId)
-  // browser.browserAction.setBadgeBackgroundColor({ color: '#E74C3C', tabId })
-  // browser.browserAction.setBadgeText({ text: 'off', tabId })
-  browser.browserAction.setTitle({
-    title: require('@/_locales/' + window.appConfig.langCode + '/background')
-      .locale.app.off,
-    tabId
+  chrome.action.setTitle({ title: getLocale().app.off, tabId }).catch(() => {
+    void chrome.runtime.lastError
   })
 }
 
 function setTempOff(tabId: number) {
   setIcon(true, tabId)
-  // browser.browserAction.setBadgeBackgroundColor({ color: '#F39C12', tabId })
-  // browser.browserAction.setBadgeText({ text: 'off', tabId })
-  browser.browserAction.setTitle({
-    title: require('@/_locales/' + window.appConfig.langCode + '/background')
-      .locale.app.tempOff,
-    tabId
-  })
+  chrome.action
+    .setTitle({ title: getLocale().app.tempOff, tabId })
+    .catch(() => {
+      void chrome.runtime.lastError
+    })
 }
 
 function setUnsupported(tabId: number) {
   setIcon(true, tabId)
-  browser.browserAction.setTitle({
-    title: require('@/_locales/' + window.appConfig.langCode + '/background')
-      .locale.app.unsupported,
-    tabId
-  })
+  chrome.action
+    .setTitle({ title: getLocale().app.unsupported, tabId })
+    .catch(() => {
+      void chrome.runtime.lastError
+    })
 }
 
 function setDefault(tabId: number) {
   setIcon(false, tabId)
   // browser.browserAction.setBadgeText({ text: '', tabId })
-  // browser.browserAction.setTitle({ title: '', tabId })
+  // browser.action.setTitle({ title: '', tabId })
 }
 
 function setIcon(gray: boolean, tabId: number) {
-  browser.browserAction.setIcon({
-    tabId,
-    path: gray
-      ? {
-          16: 'assets/icon-gray-16.png',
-          19: 'assets/icon-gray-19.png',
-          24: 'assets/icon-gray-24.png',
-          38: 'assets/icon-gray-38.png',
-          48: 'assets/icon-gray-48.png',
-          128: 'assets/icon-gray-128.png'
-        }
-      : {
-          16: 'assets/icon-16.png',
-          19: 'assets/icon-19.png',
-          24: 'assets/icon-24.png',
-          38: 'assets/icon-38.png',
-          48: 'assets/icon-48.png',
-          128: 'assets/icon-128.png'
-        }
-  })
+  chrome.action
+    .setIcon({
+      tabId,
+      path: gray
+        ? {
+            16: 'assets/icon-gray-16.png',
+            19: 'assets/icon-gray-19.png',
+            24: 'assets/icon-gray-24.png',
+            38: 'assets/icon-gray-38.png',
+            48: 'assets/icon-gray-48.png',
+            128: 'assets/icon-gray-128.png'
+          }
+        : {
+            16: 'assets/icon-16.png',
+            19: 'assets/icon-19.png',
+            24: 'assets/icon-24.png',
+            38: 'assets/icon-38.png',
+            48: 'assets/icon-48.png',
+            128: 'assets/icon-128.png'
+          }
+    })
+    .catch(() => {
+      void chrome.runtime.lastError
+    })
 }

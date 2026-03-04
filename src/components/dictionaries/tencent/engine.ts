@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { SearchFunction, GetSrcPageFunction } from '../helpers'
 import memoizeOne from 'memoize-one'
 import { Tencent } from '@opentranslate/tencent'
@@ -14,6 +15,8 @@ export const getTranslator = memoizeOne(
   () =>
     new Tencent({
       env: 'ext',
+      // MV3: pass the main bundle's axios (with fetch adapter installed)
+      axios: axios as any,
       config:
         process.env.TENCENT_SECRETID && process.env.TENCENT_SECRETKEY
           ? {
@@ -75,11 +78,12 @@ export const search: SearchFunction<
     )
   }
 
+  const result = await translator.translate(text, sl, tl, translatorConfig)
+  // Tencent needs extra api credits for TTS which does
+  // not fit in the current Saladict architecture.
+  // Use Baidu instead.
+  // TTS is optional — don't let TTS failure kill a successful translation
   try {
-    const result = await translator.translate(text, sl, tl, translatorConfig)
-    // Tencent needs extra api credits for TTS which does
-    // not fit in the current Saladict architecture.
-    // Use Baidu instead.
     const baidu = getBaiduTranslator()
     result.origin.tts = await baidu.textToSpeech(
       result.origin.paragraphs.join('\n'),
@@ -89,37 +93,23 @@ export const search: SearchFunction<
       result.trans.paragraphs.join('\n'),
       result.to
     )
+  } catch (ttsErr) {}
 
-    return machineResult(
-      {
-        result: {
-          id: 'tencent',
-          sl: result.from,
-          tl: result.to,
-          slInitial: profile.dicts.all.tencent.options.slInitial,
-          searchText: result.origin,
-          trans: result.trans
-        },
-        audio: {
-          py: result.trans.tts,
-          us: result.trans.tts
-        }
+  return machineResult(
+    {
+      result: {
+        id: 'tencent',
+        sl: result.from,
+        tl: result.to,
+        slInitial: profile.dicts.all.tencent.options.slInitial,
+        searchText: result.origin,
+        trans: result.trans
       },
-      translator.getSupportLanguages()
-    )
-  } catch (e) {
-    return machineResult(
-      {
-        result: {
-          id: 'tencent',
-          sl,
-          tl,
-          slInitial: 'hide',
-          searchText: { paragraphs: [''] },
-          trans: { paragraphs: [''] }
-        }
-      },
-      translator.getSupportLanguages()
-    )
-  }
+      audio: {
+        py: result.trans.tts,
+        us: result.trans.tts
+      }
+    },
+    translator.getSupportLanguages()
+  )
 }

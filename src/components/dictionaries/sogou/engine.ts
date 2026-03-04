@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { SearchFunction, GetSrcPageFunction } from '../helpers'
 import memoizeOne from 'memoize-one'
 import { Sogou } from '@opentranslate/sogou'
@@ -13,6 +14,8 @@ export const getTranslator = memoizeOne(
   () =>
     new Sogou({
       env: 'ext',
+      // MV3: pass the main bundle's axios (with fetch adapter installed)
+      axios: axios as any,
       config:
         process.env.SOGOU_PID && process.env.SOGOU_KEY
           ? {
@@ -42,7 +45,7 @@ export const search: SearchFunction<
   SogouResult,
   MachineTranslatePayload<SogouLanguage>
 > = async (rawText, config, profile, payload) => {
-  if (!config.dictAuth.sogou.pid) {
+  if (!config.dictAuth.sogou.pid || !config.dictAuth.sogou.key) {
     return machineResult(
       {
         result: {
@@ -74,38 +77,22 @@ export const search: SearchFunction<
     key: config.dictAuth.sogou.key
   }
 
-  try {
-    const result = await translator.translate(text, sl, tl, translatorConfig)
-    return machineResult(
-      {
-        result: {
-          id: 'sogou',
-          sl: result.from,
-          tl: result.to,
-          slInitial: profile.dicts.all.sogou.options.slInitial,
-          searchText: result.origin,
-          trans: result.trans
-        },
-        audio: {
-          py: result.trans.tts,
-          us: result.trans.tts
-        }
+  const result = await translator.translate(text, sl, tl, translatorConfig)
+  return machineResult(
+    {
+      result: {
+        id: 'sogou',
+        sl: result.from,
+        tl: result.to,
+        slInitial: profile.dicts.all.sogou.options.slInitial,
+        searchText: result.origin,
+        trans: result.trans
       },
-      translator.getSupportLanguages()
-    )
-  } catch (e) {
-    return machineResult(
-      {
-        result: {
-          id: 'sogou',
-          sl,
-          tl,
-          slInitial: 'hide',
-          searchText: { paragraphs: [''] },
-          trans: { paragraphs: [''] }
-        }
-      },
-      translator.getSupportLanguages()
-    )
-  }
+      audio: {
+        py: result.trans.tts,
+        us: result.trans.tts
+      }
+    },
+    translator.getSupportLanguages()
+  )
 }

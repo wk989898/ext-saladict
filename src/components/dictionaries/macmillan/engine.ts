@@ -82,7 +82,10 @@ async function checkResult(
 ): Promise<MacmillanSearchResult> {
   if (doc.querySelector('.senses')) {
     return handleDOM(doc)
-  } else if (options.related) {
+  }
+  // Alternatives are the only useful content when main results are empty —
+  // show them unconditionally (options.related only gates supplementary data).
+  {
     const alternatives = [
       ...doc.querySelectorAll<HTMLAnchorElement>('.display-list li a')
     ].map($a => ({
@@ -161,8 +164,10 @@ function handleDOM(
   const $sound = $entry.querySelector<HTMLDivElement>(
     '.entry-pron-head .PRONS .sound'
   )
-  if ($sound && $sound.dataset.srcMp3) {
-    result.pron = $sound.dataset.srcMp3
+  // MV3: node-html-parser has no `dataset`; use getAttribute
+  const srcMp3 = $sound && $sound.getAttribute('data-src-mp3')
+  if ($sound && srcMp3) {
+    result.pron = srcMp3
     audio.uk = result.pron
   }
 

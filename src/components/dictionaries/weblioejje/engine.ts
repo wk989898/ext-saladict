@@ -1,3 +1,4 @@
+import { parse } from 'node-html-parser'
 import { fetchDirtyDOM } from '@/_helpers/fetch-dom'
 import {
   handleNoResult,
@@ -34,7 +35,8 @@ export const search: SearchFunction<WeblioejjeResult> = (
   profile,
   payload
 ) => {
-  return fetchDirtyDOM(getSrcPage(text, config, profile))
+  return Promise.resolve(getSrcPage(text, config, profile))
+    .then(url => fetchDirtyDOM(url))
     .catch(handleNetWorkError)
     .then(handleDOM)
 }
@@ -57,7 +59,10 @@ function handleDOM(
           head += getStaticSpeakerString($audio.getAttribute('src'))
         }
 
-        $summaryTbl.outerHTML = `<div class="summaryHead">${head}</div>`
+        // MV3: node-html-parser outerHTML is read-only; use replaceWith
+        ;($summaryTbl as any).replaceWith(
+          parse(`<div class="summaryHead">${head}</div>`)
+        )
       }
 
       removeChildren($entry, '#leadBtnWrp')
@@ -70,7 +75,8 @@ function handleDOM(
     }
 
     if (
-      !$entry.className.includes('hlt_') ||
+      // MV3: node-html-parser has no `className`; use getAttribute
+      !($entry.getAttribute('class') || '').includes('hlt_') ||
       $entry.classList.contains('hlt_CPRHT') ||
       $entry.classList.contains('hlt_RLTED')
     ) {
@@ -100,13 +106,18 @@ function handleDOM(
     $entry.querySelectorAll('.fa-volume-up').forEach($audio => {
       const $source = $audio.querySelector('source')
       if ($source) {
-        $audio.replaceWith(getStaticSpeaker($source.getAttribute('src')))
+        ;($audio as any).replaceWith(
+          getStaticSpeaker($source.getAttribute('src')) as any
+        )
       }
     })
 
     $entry.querySelectorAll('br').forEach($br => {
       $br.classList.add('br')
-      $br.outerHTML = `<div class="${$br.className}"></div>`
+      // MV3: outerHTML setter & className not available; use replaceWith + getAttribute
+      ;($br as any).replaceWith(
+        parse(`<div class="${$br.getAttribute('class') || ''}"></div>`)
+      )
     })
 
     $entry.querySelectorAll('a').forEach($a => {

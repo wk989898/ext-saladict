@@ -1,3 +1,4 @@
+import { parse } from 'node-html-parser'
 import { fetchDirtyDOM } from '@/_helpers/fetch-dom'
 import { getStaticSpeaker } from '@/components/Speaker'
 import { DictConfigs } from '@/app-config'
@@ -153,7 +154,9 @@ function handleDOM(
     }
   }
 
-  if (result.length <= 0 && options.related) {
+  // Spelling suggestions are the only useful content when main results are
+  // empty — show them unconditionally (options.related only gates supplementary data).
+  if (result.length <= 0) {
     const $link = doc.querySelector('link[rel=canonical]')
     if (
       $link &&
@@ -180,37 +183,37 @@ function handleDOM(
 
 function sanitizeEntry<E extends Element>($entry: E): E {
   // expand button
+  // MV3: node-html-parser has no `parentElement`; use parentNode
   $entry.querySelectorAll('.daccord_h').forEach($btn => {
-    $btn.parentElement!.classList.add('amp-accordion')
+    const parent = $btn.parentNode as Element | null
+    if (parent && parent.classList) {
+      parent.classList.add('amp-accordion')
+    }
   })
 
   // replace amp-img
+  // MV3: document.createElement unavailable in Service Worker; use parse()
   $entry.querySelectorAll('amp-img').forEach($ampImg => {
-    const $img = document.createElement('img')
-
-    $img.setAttribute('src', getFullLink(HOST, $ampImg, 'src'))
-
+    const src = getFullLink(HOST, $ampImg, 'src')
     const attrs = ['width', 'height', 'title']
-    for (const attr of attrs) {
-      const val = $ampImg.getAttribute(attr)
-      if (val) {
-        $img.setAttribute(attr, val)
-      }
-    }
-
-    $ampImg.replaceWith($img)
+      .map(a => {
+        const v = $ampImg.getAttribute(a)
+        return v ? ` ${a}="${v}"` : ''
+      })
+      .join('')
+    ;($ampImg as any).replaceWith(parse(`<img src="${src}"${attrs} />`) as any)
   })
 
   // replace amp-audio
   $entry.querySelectorAll('amp-audio').forEach($ampAudio => {
-    const $source = $ampAudio.querySelector('source')
-    if ($source) {
-      const src = getFullLink(HOST, $source, 'src')
-      if (src) {
-        $ampAudio.replaceWith(getStaticSpeaker(src))
-        return
+      const $source = $ampAudio.querySelector('source')
+      if ($source) {
+        const src = getFullLink(HOST, $source, 'src')
+        if (src) {
+          ;($ampAudio as any).replaceWith(getStaticSpeaker(src) as any)
+          return
+        }
       }
-    }
     $ampAudio.remove()
   })
 

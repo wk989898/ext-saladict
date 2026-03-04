@@ -9,12 +9,11 @@ import {
   GetSrcPageFunction,
   DictSearchResult
 } from '../helpers'
-import { DictConfigs } from '@/app-config'
 import axios from 'axios'
-import DOMPurify from 'dompurify'
+import { stripScriptTags } from '../helpers'
 
 export const getSrcPage: GetSrcPageFunction = text => {
-  return `https://www.shanbay.com/bdc/mobile/preview/word?word=${text}`
+  return `https://www.shanbay.com/bdc/mobile/preview/word?word=${encodeURIComponent(text)}`
 }
 
 const HOST = 'http://www.shanbay.com'
@@ -40,13 +39,17 @@ export interface ShanbayResultLex {
 export type ShanbayResult = ShanbayResultLex
 
 type ShanbaySearchResult = DictSearchResult<ShanbayResult>
+type ShanbayOptions = { basic: boolean; sentence: boolean }
 
 export const search: SearchFunction<ShanbayResult> = (
   text,
   config,
   profile
 ) => {
-  const options = profile.dicts.all.shanbay.options
+  const options: ShanbayOptions =
+    ((profile.dicts.all as any).shanbay &&
+      (profile.dicts.all as any).shanbay.options) ||
+    { basic: true, sentence: true }
   return fetchDirtyDOM(
     'https://www.shanbay.com/bdc/mobile/preview/word?word=' +
       encodeURIComponent(text.replace(/\s+/g, ' '))
@@ -57,7 +60,7 @@ export const search: SearchFunction<ShanbayResult> = (
 
 function checkResult(
   doc: Document,
-  options: DictConfigs['shanbay']['options']
+  options: ShanbayOptions
 ): ShanbaySearchResult | Promise<ShanbaySearchResult> {
   const $typo = doc.querySelector('.error-typo')
   if (!$typo) {
@@ -76,19 +79,20 @@ function loadSentences(id: string) {
         return data.map(
           (sentence: { annotation: string; translation: string }) => {
             return {
-              annotation: DOMPurify.sanitize(sentence.annotation),
-              translation: DOMPurify.sanitize(sentence.translation)
+              annotation: stripScriptTags(sentence.annotation),
+              translation: stripScriptTags(sentence.translation)
             }
           }
         )
       }
       return []
     })
+    .catch(() => [])
 }
 
 async function handleDOM(
   doc: Document,
-  options: DictConfigs['shanbay']['options']
+  options: ShanbayOptions
 ): Promise<ShanbaySearchResult> {
   const word = doc.querySelector('.word-spell')
   const result: ShanbayResult = {

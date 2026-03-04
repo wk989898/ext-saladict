@@ -54,7 +54,6 @@ storiesOf('Content Scripts|WordEditor', module)
       return (
         <WordEditor
           containerWidth={number('Panel X', 450 + 100)}
-          darkMode={darkMode}
           wordEditor={{
             word: newWord({
               date: faker.date.past().valueOf(),

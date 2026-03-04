@@ -13,8 +13,14 @@ import {
 } from '../helpers'
 import { DictConfigs } from '@/app-config'
 
+/** Sanitise text for use in the dict.youdao.com/w/ URL path.
+ *  Forward-slashes cause the server to split the path (it decodes %2F). */
+function sanitizeForURL(text: string): string {
+  return text.replace(/\s+/g, ' ').replace(/\//g, ' ')
+}
+
 export const getSrcPage: GetSrcPageFunction = text =>
-  'https://dict.youdao.com/w/' + encodeURIComponent(text.replace(/\s+/g, ' '))
+  'https://dict.youdao.com/w/' + encodeURIComponent(sanitizeForURL(text))
 
 const HOST = 'http://www.youdao.com'
 
@@ -57,7 +63,7 @@ export const search: SearchFunction<YoudaoResult> = async (
   const transform = await getChsToChz(config.langCode)
 
   return fetchDirtyDOM(
-    'https://dict.youdao.com/w/' + encodeURIComponent(text.replace(/\s+/g, ' '))
+    'https://dict.youdao.com/w/' + encodeURIComponent(sanitizeForURL(text))
   )
     .catch(handleNetWorkError)
     .then(doc => checkResult(doc, options, transform))
@@ -71,15 +77,15 @@ function checkResult(
   const $typo = doc.querySelector('.error-typo')
   if (!$typo) {
     return handleDOM(doc, options, transform)
-  } else if (options.related) {
-    return {
-      result: {
-        type: 'related',
-        list: getInnerHTML(HOST, $typo, { transform })
-      }
+  }
+  // Typo suggestions are the only useful content when main results are empty —
+  // show them unconditionally (options.related only gates *supplementary* data).
+  return {
+    result: {
+      type: 'related',
+      list: getInnerHTML(HOST, $typo, { transform })
     }
   }
-  return handleNoResult()
 }
 
 function handleDOM(
@@ -101,15 +107,20 @@ function handleDOM(
 
   const $star = doc.querySelector('.star')
   if ($star) {
-    result.stars = Number(($star.className.match(/\d+/) || [0])[0])
+    // MV3: node-html-parser has no `className` property; use getAttribute
+    result.stars = Number(
+      (($star.getAttribute('class') || '').match(/\d+/) || [0])[0]
+    )
   }
 
   doc.querySelectorAll('.baav .pronounce').forEach($pron => {
     const phsym = $pron.textContent || ''
     const $voice = $pron.querySelector<HTMLAnchorElement>('.dictvoice')
-    if ($voice && $voice.dataset.rel) {
+    // MV3: node-html-parser has no `dataset`; use getAttribute
+    const voiceRel = $voice && $voice.getAttribute('data-rel')
+    if ($voice && voiceRel) {
       const url =
-        'https://dict.youdao.com/dictvoice?audio=' + $voice.dataset.rel
+        'https://dict.youdao.com/dictvoice?audio=' + voiceRel
 
       result.prons.push({ phsym, url })
 
@@ -141,7 +152,10 @@ function handleDOM(
 
       const $star = $container.querySelector('.star')
       if ($star) {
-        const starMatch = /star(\d+)/.exec(String($star.className))
+        // MV3: node-html-parser has no `className`; use getAttribute
+        const starMatch = /star(\d+)/.exec(
+          $star.getAttribute('class') || ''
+        )
         if (starMatch) {
           const rate = +starMatch[1]
           let stars = ''
@@ -184,7 +198,9 @@ function handleDOM(
     })
   }
 
-  if (options.translation) {
+  if (options.translation || !result.title) {
+    // Always extract machine translation when there is no dictionary match
+    // (i.e. long text / sentences), so we can fall back to it.
     result.translation = getInnerHTML(HOST, doc, {
       selector: '#fanyiToggle .trans-container',
       transform

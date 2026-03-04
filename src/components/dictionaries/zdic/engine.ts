@@ -11,7 +11,7 @@ import {
 import { getStaticSpeaker } from '@/components/Speaker'
 
 export const getSrcPage: GetSrcPageFunction = text => {
-  return `https://www.zdic.net/hans/${text}`
+  return `https://www.zdic.net/hans/${encodeURIComponent(text)}`
 }
 
 const HOST = 'https://www.zdic.net'
@@ -23,8 +23,6 @@ export type ZdicResult = Array<{
 
 type ZdicSearchResult = DictSearchResult<ZdicResult>
 
-let isRefererModified = false
-
 export const search: SearchFunction<ZdicResult> = (
   text,
   config,
@@ -32,10 +30,6 @@ export const search: SearchFunction<ZdicResult> = (
   payload
 ) => {
   const isAudio = profile.dicts.all.zdic.options.audio
-  if (!isRefererModified && isAudio) {
-    isRefererModified = true
-    modifyReferer()
-  }
 
   return fetchDirtyDOM(
     'https://www.zdic.net/hans/' + encodeURIComponent(text.replace(/\s+/g, ' '))
@@ -55,7 +49,8 @@ function handleDOM(
   for (const $entry of doc.querySelectorAll<HTMLDivElement>(
     '[data-type-block]'
   )) {
-    const title = $entry.dataset.typeBlock || ''
+    // MV3: node-html-parser has no `dataset`; use getAttribute
+    const title = $entry.getAttribute('data-type-block') || ''
     if (!/基本解释|词语解释|详细解释/.test(title)) {
       continue
     }
@@ -64,12 +59,13 @@ function handleDOM(
       '[data-src-mp3]'
     )) {
       if (isAudio) {
+        const mp3Src = $a.getAttribute('data-src-mp3')
         if (!response.audio) {
           response.audio = {
-            py: $a.dataset.srcMp3
+            py: mp3Src || undefined
           }
         }
-        $a.replaceWith(getStaticSpeaker($a.dataset.srcMp3))
+        $a.replaceWith(getStaticSpeaker(mp3Src))
       } else {
         $a.remove()
       }
@@ -84,39 +80,6 @@ function handleDOM(
   return response.result.length > 0 ? response : handleNoResult()
 }
 
-function modifyReferer() {
-  const extraInfoSpec = ['blocking', 'requestHeaders']
-  // https://developer.chrome.com/extensions/webRequest#life_cycle_footnote
-  if (
-    browser.webRequest['OnBeforeSendHeadersOptions'] &&
-    Object.prototype.hasOwnProperty.call(
-      browser.webRequest['OnBeforeSendHeadersOptions'],
-      'EXTRA_HEADERS'
-    )
-  ) {
-    extraInfoSpec.push('extraHeaders')
-  }
-
-  browser.webRequest.onBeforeSendHeaders.addListener(
-    details => {
-      if (details && details.requestHeaders) {
-        for (var i = 0; i < details.requestHeaders.length; ++i) {
-          if (details.requestHeaders[i].name === 'Referer') {
-            details.requestHeaders[i].value = 'https://www.zdic.net'
-            break
-          }
-        }
-        if (i === details.requestHeaders.length) {
-          details.requestHeaders.push({
-            name: 'Referer',
-            value: 'https://www.zdic.net'
-          })
-        }
-      }
-      return { requestHeaders: details.requestHeaders }
-    },
-    { urls: ['https://img.zdic.net/audio/*'] },
-    /** WebExt type is missing Chrome support */
-    extraInfoSpec as any
-  )
-}
+// MV3: Referer header for zdic audio is now handled by a static
+// declarativeNetRequest rule in src/declarative-net-request/rules.json.
+// The old blocking webRequest.onBeforeSendHeaders listener has been removed.

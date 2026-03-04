@@ -14,10 +14,9 @@ import { DictConfigs } from '@/app-config'
 import { getStaticSpeaker } from '@/components/Speaker'
 
 export const getSrcPage: GetSrcPageFunction = text => {
-  return `https://www.ldoceonline.com/dictionary/${text
-    .trim()
-    .split(/\s+/)
-    .join('-')}`
+  return `https://www.ldoceonline.com/dictionary/${encodeURIComponent(
+    text.trim().split(/\s+/).join('-')
+  )}`
 }
 
 const HOST = 'https://www.ldoceonline.com'
@@ -93,10 +92,9 @@ function handleDOM(
 ): LongmanSearchResult | Promise<LongmanSearchResult> {
   if (doc.querySelector('.dictentry')) {
     return handleDOMLex(doc, options)
-  } else if (options.related) {
+  } else {
     return handleDOMRelated(doc)
   }
-  return handleNoResult()
 }
 
 function handleDOMLex(
@@ -115,11 +113,12 @@ function handleDOMLex(
   doc
     .querySelectorAll<HTMLSpanElement>('.speaker.exafile')
     .forEach($speaker => {
-      const mp3 = $speaker.dataset.srcMp3
+      // MV3: node-html-parser has no `dataset`; use getAttribute
+      const mp3 = $speaker.getAttribute('data-src-mp3')
       if (mp3) {
-        const parent = $speaker.parentElement
+        const parent = $speaker.parentNode as Element | null
         $speaker.replaceWith(getStaticSpeaker(mp3))
-        if (parent && parent.classList.contains('EXAMPLE')) {
+        if (parent && parent.classList && parent.classList.contains('EXAMPLE')) {
           parent.classList.add('withSpeaker')
         }
       }
@@ -186,7 +185,8 @@ function handleDOMLex(
       }
 
       level.rate = (($level.textContent || '').match(/●/g) || []).length
-      level.title = $level.title
+      // MV3: node-html-parser has no `.title` property; use getAttribute
+      level.title = $level.getAttribute('title') || ''
 
       entry.level = level
     }
@@ -194,7 +194,7 @@ function handleDOMLex(
     entry.freq = Array.from(
       $head.querySelectorAll<HTMLSpanElement>('.FREQ')
     ).map($el => ({
-      title: $el.title,
+      title: $el.getAttribute('title') || '',
       rank: $el.textContent || ''
     }))
 
@@ -202,7 +202,8 @@ function handleDOMLex(
 
     $head.querySelectorAll<HTMLSpanElement>('.speaker').forEach($pron => {
       let lang = 'us'
-      const title = $pron.title
+      // MV3: node-html-parser has no `.title` property; use getAttribute
+      const title = $pron.getAttribute('title') || ''
       if (title.includes('British')) {
         lang = 'uk'
       }

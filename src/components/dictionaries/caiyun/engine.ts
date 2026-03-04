@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { SearchFunction, GetSrcPageFunction } from '../helpers'
 import memoizeOne from 'memoize-one'
 import { Caiyun } from '@opentranslate/caiyun'
@@ -15,6 +16,9 @@ export const getTranslator = memoizeOne(
   () =>
     new Caiyun({
       env: 'ext',
+      // MV3: pass the main bundle's axios (with fetch adapter installed)
+      // so the translator doesn't use its own copy without the adapter
+      axios: axios as any,
       config: process.env.CAIYUN_TOKEN
         ? {
             token: process.env.CAIYUN_TOKEN
@@ -48,19 +52,27 @@ export const search: SearchFunction<
 
   let baiduResult: TranslateResult | undefined
 
-  try {
-    // Caiyun's lang detection is broken
-    baiduResult = await baiduTranslator.translate(text, sl, tl)
-    if (langcodes.includes(baiduResult.from)) {
-      sl = baiduResult.from
+  // Caiyun's lang detection is broken, use Baidu for detection.
+  // Only call Baidu API when credentials are configured to avoid UNAUTHORIZED USER errors.
+  const baiduAppid = config.dictAuth.baidu.appid
+  const baiduKey = config.dictAuth.baidu.key
+  if (baiduAppid && baiduKey) {
+    try {
+      baiduResult = await baiduTranslator.translate(text, sl, tl, { appid: baiduAppid, key: baiduKey })
+      if (langcodes.includes(baiduResult.from)) {
+        sl = baiduResult.from
+      }
+    } catch (e) {
+      console.warn('Caiyun: Baidu language detection failed, using default', e)
     }
-  } catch (e) {}
+  }
 
   const caiYunToken = config.dictAuth.caiyun.token
   const caiYunConfig = caiYunToken ? { token: caiYunToken } : undefined
 
+  const result = await translator.translate(text, sl, tl, caiYunConfig)
+  // TTS is optional — don't let TTS failure kill a successful translation
   try {
-    const result = await translator.translate(text, sl, tl, caiYunConfig)
     result.origin.tts = await baiduTranslator.textToSpeech(
       result.origin.paragraphs.join('\n'),
       result.from
@@ -69,36 +81,24 @@ export const search: SearchFunction<
       result.trans.paragraphs.join('\n'),
       result.to
     )
-    return machineResult(
-      {
-        result: {
-          id: 'caiyun',
-          sl: result.from,
-          tl: result.to,
-          slInitial: profile.dicts.all.caiyun.options.slInitial,
-          searchText: result.origin,
-          trans: result.trans
-        },
-        audio: {
-          py: result.trans.tts,
-          us: result.trans.tts
-        }
-      },
-      langcodes
-    )
-  } catch (e) {
-    return machineResult(
-      {
-        result: {
-          id: 'caiyun',
-          sl,
-          tl,
-          slInitial: 'hide',
-          searchText: { paragraphs: [''] },
-          trans: { paragraphs: [''] }
-        }
-      },
-      translator.getSupportLanguages()
-    )
+  } catch {
+    /* TTS is optional — failure is non-fatal */
   }
+  return machineResult(
+    {
+      result: {
+        id: 'caiyun',
+        sl: result.from,
+        tl: result.to,
+        slInitial: profile.dicts.all.caiyun.options.slInitial,
+        searchText: result.origin,
+        trans: result.trans
+      },
+      audio: {
+        py: result.trans.tts,
+        us: result.trans.tts
+      }
+    },
+    langcodes
+  )
 }

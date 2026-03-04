@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { SearchFunction, GetSrcPageFunction } from '../helpers'
 import memoizeOne from 'memoize-one'
 import { Youdao } from '@opentranslate/youdao'
@@ -13,6 +14,8 @@ export const getTranslator = memoizeOne(
   () =>
     new Youdao({
       env: 'ext',
+      // MV3: pass the main bundle's axios (with fetch adapter installed)
+      axios: axios as any,
       config:
         process.env.YOUDAO_APPKEY && process.env.YOUDAO_KEY
           ? {
@@ -47,38 +50,22 @@ export const search: SearchFunction<
   const key = config.dictAuth.youdaotrans.key
   const translatorConfig = appKey && key ? { appKey, key } : undefined
 
-  try {
-    const result = await translator.translate(text, sl, tl, translatorConfig)
-    return machineResult(
-      {
-        result: {
-          id: 'youdaotrans',
-          sl: result.from,
-          tl: result.to,
-          slInitial: profile.dicts.all.youdaotrans.options.slInitial,
-          searchText: result.origin,
-          trans: result.trans
-        },
-        audio: {
-          py: result.trans.tts,
-          us: result.trans.tts
-        }
+  const result = await translator.translate(text, sl, tl, translatorConfig)
+  return machineResult(
+    {
+      result: {
+        id: 'youdaotrans',
+        sl: result.from,
+        tl: result.to,
+        slInitial: profile.dicts.all.youdaotrans.options.slInitial,
+        searchText: result.origin,
+        trans: result.trans
       },
-      translator.getSupportLanguages()
-    )
-  } catch (e) {
-    return machineResult(
-      {
-        result: {
-          id: 'youdaotrans',
-          sl,
-          tl,
-          slInitial: 'hide',
-          searchText: { paragraphs: [''] },
-          trans: { paragraphs: [''] }
-        }
-      },
-      translator.getSupportLanguages()
-    )
-  }
+      audio: {
+        py: result.trans.tts,
+        us: result.trans.tts
+      }
+    },
+    translator.getSupportLanguages()
+  )
 }

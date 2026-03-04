@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { SearchFunction, GetSrcPageFunction } from '../helpers'
 import memoizeOne from 'memoize-one'
 import { Baidu } from '@opentranslate/baidu'
@@ -13,6 +14,8 @@ export const getTranslator = memoizeOne(
   () =>
     new Baidu({
       env: 'ext',
+      // MV3: pass the main bundle's axios (with fetch adapter installed)
+      axios: axios as any,
       config:
         process.env.BAIDU_APPID && process.env.BAIDU_KEY
           ? {
@@ -56,38 +59,39 @@ export const search: SearchFunction<
   const key = config.dictAuth.baidu.key
   const translatorConfig = appid && key ? { appid, key } : undefined
 
-  try {
-    const result = await translator.translate(text, sl, tl, translatorConfig)
+  if (!translatorConfig && !(process.env.BAIDU_APPID && process.env.BAIDU_KEY)) {
     return machineResult(
       {
         result: {
+          requireCredential: true,
           id: 'baidu',
-          slInitial: profile.dicts.all.baidu.options.slInitial,
-          sl: result.from,
-          tl: result.to,
-          searchText: result.origin,
-          trans: result.trans
-        },
-        audio: {
-          py: result.trans.tts,
-          us: result.trans.tts
-        }
-      },
-      translator.getSupportLanguages()
-    )
-  } catch (e) {
-    return machineResult(
-      {
-        result: {
-          id: 'baidu',
+          sl: 'auto',
+          tl: 'auto',
           slInitial: 'hide',
-          sl,
-          tl,
           searchText: { paragraphs: [''] },
           trans: { paragraphs: [''] }
         }
       },
-      translator.getSupportLanguages()
+      []
     )
   }
+
+  const result = await translator.translate(text, sl, tl, translatorConfig)
+  return machineResult(
+    {
+      result: {
+        id: 'baidu',
+        slInitial: profile.dicts.all.baidu.options.slInitial,
+        sl: result.from,
+        tl: result.to,
+        searchText: result.origin,
+        trans: result.trans
+      },
+      audio: {
+        py: result.trans.tts,
+        us: result.trans.tts
+      }
+    },
+    translator.getSupportLanguages()
+  )
 }

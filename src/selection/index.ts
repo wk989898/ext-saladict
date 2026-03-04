@@ -90,17 +90,28 @@ if (!window.__SALADICT_SELECTION_LOADED__) {
 
   config$$.pipe(switchMap(createSelectTextStream)).subscribe(async result => {
     if (result.word) {
+      const {
+        dbClick = false,
+        self = false,
+        altKey = false,
+        shiftKey = false,
+        ctrlKey = false,
+        metaKey = false,
+        instant = false,
+        force = false,
+        ...rest
+      } = result as any
       sendMessage({
-        dbClick: false,
-        altKey: false,
-        shiftKey: false,
-        ctrlKey: false,
-        metaKey: false,
-        self: false,
-        instant: false,
-        force: false,
-        ...result,
-        word: await newSelectionWord(result.word)
+        ...rest,
+        word: await newSelectionWord(result.word),
+        dbClick,
+        self,
+        altKey,
+        shiftKey,
+        ctrlKey,
+        metaKey,
+        instant,
+        force
       })
     } else {
       sendEmptyMessage(result.self)

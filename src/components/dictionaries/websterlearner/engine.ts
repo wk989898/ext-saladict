@@ -11,10 +11,9 @@ import {
 import { DictConfigs } from '@/app-config'
 
 export const getSrcPage: GetSrcPageFunction = text => {
-  return `http://www.learnersdictionary.com/definition/${text
-    .trim()
-    .split(/\s+/)
-    .join('-')}`
+  return `http://www.learnersdictionary.com/definition/${encodeURIComponent(
+    text.trim().split(/\s+/).join('-')
+  )}`
 }
 
 const HOST = 'http://www.learnersdictionary.com'
@@ -75,7 +74,7 @@ function checkResult(
   )
   if (!$alternative) {
     return handleDOM(doc, options)
-  } else if (options.related) {
+  } else {
     return {
       result: {
         type: 'related',
@@ -83,7 +82,6 @@ function checkResult(
       }
     }
   }
-  return handleNoResult()
 }
 
 function handleDOM(
@@ -109,9 +107,10 @@ function handleDOM(
     }
     const $pron = $headword.querySelector<HTMLAnchorElement>('.play_pron')
     if ($pron) {
-      const path = ($pron.dataset.lang || '').replace('_', '/')
-      const dir = $pron.dataset.dir || ''
-      const file = $pron.dataset.file || ''
+      // MV3: node-html-parser has no `dataset`; use getAttribute
+      const path = ($pron.getAttribute('data-lang') || '').replace('_', '/')
+      const dir = $pron.getAttribute('data-dir') || ''
+      const file = $pron.getAttribute('data-file') || ''
       entry.pron = `http://media.merriam-webster.com/audio/prons/${path}/mp3/${dir}/${file}.mp3`
       audio.us = entry.pron
       $pron.remove()
@@ -122,9 +121,9 @@ function handleDOM(
     if ($headwordInfs) {
       const $pron = $headwordInfs.querySelector<HTMLAnchorElement>('.play_pron')
       if ($pron) {
-        const path = ($pron.dataset.lang || '').replace('_', '/')
-        const dir = $pron.dataset.dir || ''
-        const file = $pron.dataset.file || ''
+        const path = ($pron.getAttribute('data-lang') || '').replace('_', '/')
+        const dir = $pron.getAttribute('data-dir') || ''
+        const file = $pron.getAttribute('data-file') || ''
         entry.infsPron = `http://media.merriam-webster.com/audio/prons/${path}/mp3/${dir}/${file}.mp3`
         $pron.remove()
       }
@@ -148,7 +147,7 @@ function handleDOM(
     if (options.arts) {
       entry.arts = Array.from(
         $entry.querySelectorAll<HTMLImageElement>('.arts img')
-      ).map($img => $img.src)
+      ).map($img => $img.getAttribute('src') || '')
     }
 
     if (

@@ -1,3 +1,4 @@
+import { parse } from 'node-html-parser'
 import {
   HTMLString,
   handleNoResult,
@@ -59,7 +60,8 @@ export const search: SearchFunction<GoogleDictResult> = async (
   function handleDOM(
     bodyText: string
   ): GoogleDictSearchResult | Promise<GoogleDictSearchResult> {
-    const doc = new DOMParser().parseFromString(bodyText, 'text/html')
+    // MV3: DOMParser is unavailable in Service Worker; use node-html-parser
+    const doc: any = parse(bodyText)
 
     // mend fragments
     extFragements(bodyText).forEach(({ id, innerHTML }) => {
@@ -68,15 +70,15 @@ export const search: SearchFunction<GoogleDictResult> = async (
         if (el) {
           el.innerHTML = innerHTML
         }
-      } catch (e) {
-        // ignore
+      } catch {
+        /* querySelector may throw on unusual IDs — safe to skip */
       }
     })
 
     const $obcontainer = doc.querySelector('.lr_container')
     if ($obcontainer) {
       $obcontainer
-        .querySelectorAll<HTMLDivElement>('.vkc_np')
+        .querySelectorAll('.vkc_np')
         .forEach($block => {
           if (
             $block.querySelector('.zbA8Me') || // Dictionary title
@@ -113,12 +115,13 @@ export const search: SearchFunction<GoogleDictResult> = async (
         .querySelectorAll('[role=listitem] > [jsname=F457ec]')
         .forEach($word => {
           // let saladict jump into the words
-          const $a = document.createElement('a')
-          $a.textContent = getText($word)
-          Array.from($word.childNodes).forEach($child => {
-            $child.remove()
+          // MV3: document.createElement unavailable; use parse()
+          const text = getText($word)
+          const $a = parse(`<a>${text}</a>`).firstChild
+          Array.from($word.childNodes as any[]).forEach($child => {
+            ;($child as any).remove()
           })
-          $word.appendChild($a)
+          if ($a) ($word as any).appendChild($a as any)
           // always appeared available
           $word.removeAttribute('style')
           $word.classList.add('MR2UAc')
@@ -139,8 +142,8 @@ export const search: SearchFunction<GoogleDictResult> = async (
           if (el) {
             el.setAttribute('src', src)
           }
-        } catch (e) {
-          // ignore
+        } catch {
+          /* querySelector may throw on unusual IDs — safe to skip */
         }
       })
 
@@ -191,8 +194,8 @@ function extractImg(text: string): Array<{ id: string; src: string }> {
     try {
       const json = JSON.parse(`{${kvPairMatch[1]}}`)
       return Object.keys(json).map(key => ({ id: key, src: json[key] }))
-    } catch (e) {
-      // ignore
+    } catch {
+      /* malformed JSON from page script — safe to skip */
     }
   }
   return []
