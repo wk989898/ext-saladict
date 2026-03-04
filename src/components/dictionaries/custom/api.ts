@@ -131,6 +131,7 @@ function shouldRetryWithSimpleInput(status: number, error: string): boolean {
 }
 
 function shouldFallbackToChat(status: number, error: string): boolean {
+  if (status === 0) return true
   if (status >= 500) return true
   if (status === 404 || status === 405 || status === 501) return true
 
@@ -206,7 +207,18 @@ async function requestViaResponses(
     ]
   }
 
-  let response = await postJSON(endpoint, options.apiKey, structuredPayload)
+  let response: PostResult
+  try {
+    response = await postJSON(endpoint, options.apiKey, structuredPayload)
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      error: e && e.message ? e.message : 'NETWORK_ERROR',
+      api: 'responses',
+      endpoint
+    }
+  }
   let text = response.ok ? extractResponsesText(response.data) : ''
   if (response.ok && text) {
     return {
@@ -228,7 +240,17 @@ async function requestViaResponses(
       model: options.model,
       input: options.prompt
     }
-    response = await postJSON(endpoint, options.apiKey, simplePayload)
+    try {
+      response = await postJSON(endpoint, options.apiKey, simplePayload)
+    } catch (e) {
+      return {
+        ok: false,
+        status: 0,
+        error: e && e.message ? e.message : 'NETWORK_ERROR',
+        api: 'responses',
+        endpoint
+      }
+    }
     text = response.ok ? extractResponsesText(response.data) : ''
     if (response.ok && text) {
       return {
@@ -264,7 +286,18 @@ async function requestViaChatCompletions(
     messages: [{ role: 'user', content: options.prompt }]
   }
 
-  const response = await postJSON(endpoint, options.apiKey, payload)
+  let response: PostResult
+  try {
+    response = await postJSON(endpoint, options.apiKey, payload)
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      error: e && e.message ? e.message : 'NETWORK_ERROR',
+      api: 'chat-completions',
+      endpoint
+    }
+  }
   const text = response.ok ? extractChatCompletionsText(response.data) : ''
   if (response.ok && text) {
     return {
