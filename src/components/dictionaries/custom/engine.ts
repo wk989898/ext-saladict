@@ -9,8 +9,7 @@ import {
 } from '@/components/MachineTrans/engine'
 import { CustomLanguage } from './config'
 import {
-  getResponsesEndpoint,
-  extractResponsesText
+  requestOpenAIText
 } from '@/components/dictionaries/custom/api'
 
 const DEFAULT_BASE_URL = 'https://api.openai.com'
@@ -56,28 +55,18 @@ export const search: SearchFunction<
     payload
   )
 
-  const endpoint = getResponsesEndpoint(baseURL || DEFAULT_BASE_URL)
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model,
-      input: `Translate the following text from ${sl} to ${tl}. Preserve original meaning and line breaks. Return only the translated text.\n\n${text}`
-    })
+  const prompt = `Translate the following text from ${sl} to ${tl}. Preserve original meaning and line breaks. Return only the translated text.\n\n${text}`
+  const result = await requestOpenAIText({
+    baseURL: baseURL || DEFAULT_BASE_URL,
+    apiKey,
+    model,
+    prompt
   })
 
-  if (!response.ok) {
+  if (!result.ok || !result.text) {
     throw new Error('NETWORK_ERROR')
   }
-
-  const data = await response.json()
-  const translated = extractResponsesText(data)
-  if (!translated) {
-    throw new Error('NO_RESULT')
-  }
+  const translated = result.text
 
   return machineResult(
     {

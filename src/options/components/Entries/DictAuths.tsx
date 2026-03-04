@@ -104,13 +104,18 @@ export const DictAuths: FC = () => {
 
                 if (result.ok) {
                   notification.success({
-                    message: 'OpenAI test succeeded',
+                    message:
+                      result.api === 'chat-completions'
+                        ? 'OpenAI test succeeded (chat fallback)'
+                        : 'OpenAI test succeeded',
                     description: result.text
                   })
                 } else {
                   notification.error({
                     message: `OpenAI test failed (${result.status})`,
-                    description: result.error || 'Unknown error'
+                    description: [result.error, result.endpoint]
+                      .filter(Boolean)
+                      .join(' @ ')
                   })
                 }
               } catch (e) {

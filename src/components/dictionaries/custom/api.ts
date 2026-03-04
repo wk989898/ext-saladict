@@ -1,16 +1,60 @@
 const DEFAULT_BASE_URL = 'https://api.openai.com'
 
-export function getResponsesEndpoint(baseURL?: string): string {
-  const raw = (baseURL || DEFAULT_BASE_URL).trim()
-  const trimmed = raw.replace(/\/+$/, '')
+type OpenAIAPIType = 'responses' | 'chat-completions'
 
-  if (/\/responses$/i.test(trimmed)) {
-    return trimmed
+interface TextRequestOptions {
+  baseURL?: string
+  apiKey: string
+  model: string
+  prompt: string
+}
+
+interface TextRequestResult {
+  ok: boolean
+  status: number
+  text?: string
+  error?: string
+  api: OpenAIAPIType
+  endpoint: string
+}
+
+interface PostResult {
+  ok: boolean
+  status: number
+  data: any
+}
+
+function normalizeBaseURL(baseURL?: string): string {
+  const raw = (baseURL || DEFAULT_BASE_URL).trim()
+  return raw.replace(/\/+$/, '')
+}
+
+export function getResponsesEndpoint(baseURL?: string): string {
+  const normalized = normalizeBaseURL(baseURL)
+  if (/\/responses$/i.test(normalized)) {
+    return normalized
   }
-  if (/\/v1$/i.test(trimmed)) {
-    return `${trimmed}/responses`
+  if (/\/chat\/completions$/i.test(normalized)) {
+    return normalized.replace(/\/chat\/completions$/i, '/responses')
   }
-  return `${trimmed}/v1/responses`
+  if (/\/v1$/i.test(normalized)) {
+    return `${normalized}/responses`
+  }
+  return `${normalized}/v1/responses`
+}
+
+export function getChatCompletionsEndpoint(baseURL?: string): string {
+  const normalized = normalizeBaseURL(baseURL)
+  if (/\/chat\/completions$/i.test(normalized)) {
+    return normalized
+  }
+  if (/\/responses$/i.test(normalized)) {
+    return normalized.replace(/\/responses$/i, '/chat/completions')
+  }
+  if (/\/v1$/i.test(normalized)) {
+    return `${normalized}/chat/completions`
+  }
+  return `${normalized}/v1/chat/completions`
 }
 
 export function extractResponsesText(data: any): string {
@@ -20,10 +64,13 @@ export function extractResponsesText(data: any): string {
 
   if (Array.isArray(data?.output)) {
     const text = data.output
-      .flatMap((item: any) => (Array.isArray(item?.content) ? item.content : []))
-      .map((item: any) => {
-        if (typeof item?.text === 'string') return item.text
-        if (typeof item?.output_text === 'string') return item.output_text
+      .flatMap((outputItem: any) =>
+        Array.isArray(outputItem?.content) ? outputItem.content : []
+      )
+      .map((contentItem: any) => {
+        if (typeof contentItem?.text === 'string') return contentItem.text
+        if (typeof contentItem?.output_text === 'string')
+          return contentItem.output_text
         return ''
       })
       .filter(Boolean)
@@ -32,13 +79,20 @@ export function extractResponsesText(data: any): string {
     if (text) return text
   }
 
+  return extractChatCompletionsText(data)
+}
+
+export function extractChatCompletionsText(data: any): string {
   const chatContent = data?.choices?.[0]?.message?.content
   if (typeof chatContent === 'string' && chatContent.trim()) {
     return chatContent.trim()
   }
   if (Array.isArray(chatContent)) {
     const text = chatContent
-      .map((item: any) => (typeof item?.text === 'string' ? item.text : ''))
+      .map((item: any) => {
+        if (typeof item?.text === 'string') return item.text
+        return ''
+      })
       .filter(Boolean)
       .join('\n')
       .trim()
@@ -49,18 +103,215 @@ export function extractResponsesText(data: any): string {
   if (typeof completionText === 'string' && completionText.trim()) {
     return completionText.trim()
   }
-
   return ''
 }
 
 export function extractResponsesError(data: any): string {
+  if (typeof data === 'string' && data.trim()) {
+    return data.trim()
+  }
   if (typeof data?.error?.message === 'string' && data.error.message.trim()) {
     return data.error.message.trim()
+  }
+  if (typeof data?.error === 'string' && data.error.trim()) {
+    return data.error.trim()
   }
   if (typeof data?.message === 'string' && data.message.trim()) {
     return data.message.trim()
   }
+  if (typeof data?.detail === 'string' && data.detail.trim()) {
+    return data.detail.trim()
+  }
   return ''
+}
+
+function shouldRetryWithSimpleInput(status: number, error: string): boolean {
+  if (status !== 400 && status !== 422) return false
+  return /input/i.test(error)
+}
+
+function shouldFallbackToChat(status: number, error: string): boolean {
+  if (status >= 500) return true
+  if (status === 404 || status === 405 || status === 501) return true
+
+  const lowered = error.toLowerCase()
+  return (
+    lowered.includes('upstream request failed') ||
+    lowered.includes('not implemented') ||
+    lowered.includes('unsupported') ||
+    lowered.includes('responses') ||
+    lowered.includes('not found')
+  )
+}
+
+async function parseResponseBody(response: Response): Promise<any> {
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    try {
+      return await response.json()
+    } catch {
+      return null
+    }
+  }
+
+  try {
+    const text = await response.text()
+    if (!text) return null
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  } catch {
+    return null
+  }
+}
+
+async function postJSON(
+  endpoint: string,
+  apiKey: string,
+  body: Record<string, any>
+): Promise<PostResult> {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify(body)
+  })
+
+  const data = await parseResponseBody(response)
+  return {
+    ok: response.ok,
+    status: response.status,
+    data
+  }
+}
+
+async function requestViaResponses(
+  options: TextRequestOptions
+): Promise<TextRequestResult> {
+  const endpoint = getResponsesEndpoint(options.baseURL)
+
+  // Align with openai-node usage: responses.create({ model, input: [{...}] })
+  const structuredPayload = {
+    model: options.model,
+    input: [
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: options.prompt }]
+      }
+    ]
+  }
+
+  let response = await postJSON(endpoint, options.apiKey, structuredPayload)
+  let text = response.ok ? extractResponsesText(response.data) : ''
+  if (response.ok && text) {
+    return {
+      ok: true,
+      status: response.status,
+      text,
+      api: 'responses',
+      endpoint
+    }
+  }
+
+  let error = extractResponsesError(response.data) || `HTTP ${response.status}`
+  if (response.ok && !text) {
+    error = 'Empty text in response'
+  }
+
+  if (shouldRetryWithSimpleInput(response.status, error)) {
+    const simplePayload = {
+      model: options.model,
+      input: options.prompt
+    }
+    response = await postJSON(endpoint, options.apiKey, simplePayload)
+    text = response.ok ? extractResponsesText(response.data) : ''
+    if (response.ok && text) {
+      return {
+        ok: true,
+        status: response.status,
+        text,
+        api: 'responses',
+        endpoint
+      }
+    }
+
+    error = extractResponsesError(response.data) || `HTTP ${response.status}`
+    if (response.ok && !text) {
+      error = 'Empty text in response'
+    }
+  }
+
+  return {
+    ok: false,
+    status: response.status,
+    error,
+    api: 'responses',
+    endpoint
+  }
+}
+
+async function requestViaChatCompletions(
+  options: TextRequestOptions
+): Promise<TextRequestResult> {
+  const endpoint = getChatCompletionsEndpoint(options.baseURL)
+  const payload = {
+    model: options.model,
+    messages: [{ role: 'user', content: options.prompt }]
+  }
+
+  const response = await postJSON(endpoint, options.apiKey, payload)
+  const text = response.ok ? extractChatCompletionsText(response.data) : ''
+  if (response.ok && text) {
+    return {
+      ok: true,
+      status: response.status,
+      text,
+      api: 'chat-completions',
+      endpoint
+    }
+  }
+
+  const error = response.ok
+    ? 'Empty text in response'
+    : extractResponsesError(response.data) || `HTTP ${response.status}`
+  return {
+    ok: false,
+    status: response.status,
+    error,
+    api: 'chat-completions',
+    endpoint
+  }
+}
+
+export async function requestOpenAIText(
+  options: TextRequestOptions
+): Promise<TextRequestResult> {
+  const responsesResult = await requestViaResponses(options)
+  if (responsesResult.ok) {
+    return responsesResult
+  }
+
+  if (!shouldFallbackToChat(responsesResult.status, responsesResult.error || '')) {
+    return responsesResult
+  }
+
+  const chatResult = await requestViaChatCompletions(options)
+  if (chatResult.ok) {
+    return chatResult
+  }
+
+  return {
+    ok: false,
+    status: chatResult.status || responsesResult.status,
+    error: [responsesResult.error, chatResult.error].filter(Boolean).join(' | '),
+    api: chatResult.api,
+    endpoint: chatResult.endpoint
+  }
 }
 
 export async function testOpenAIResponses(options: {
@@ -72,48 +323,16 @@ export async function testOpenAIResponses(options: {
   status: number
   text?: string
   error?: string
+  api?: OpenAIAPIType
+  endpoint?: string
 }> {
-  const endpoint = getResponsesEndpoint(options.baseURL)
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${options.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: options.model,
-      input:
-        "Translate 'hello world' into Simplified Chinese. Return only translated text."
-    })
+  const result = await requestOpenAIText({
+    baseURL: options.baseURL,
+    apiKey: options.apiKey,
+    model: options.model,
+    prompt:
+      "Translate 'hello world' into Simplified Chinese. Return only translated text."
   })
 
-  let data: any = null
-  try {
-    data = await response.json()
-  } catch {
-    data = null
-  }
-
-  if (!response.ok) {
-    return {
-      ok: false,
-      status: response.status,
-      error: extractResponsesError(data) || `HTTP ${response.status}`
-    }
-  }
-
-  const text = extractResponsesText(data)
-  if (!text) {
-    return {
-      ok: false,
-      status: response.status,
-      error: 'Empty text in response'
-    }
-  }
-
-  return {
-    ok: true,
-    status: response.status,
-    text
-  }
+  return result
 }
