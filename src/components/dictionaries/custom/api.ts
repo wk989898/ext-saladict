@@ -1,7 +1,7 @@
 // Keep runtime dependency as CommonJS require so TypeScript 3.8 does not
 // parse modern SDK type declarations from node_modules.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const OpenAI = require('openai')
+const { OpenAI } = require('openai/client')
 
 const DEFAULT_BASE_URL = 'https://api.openai.com'
 
