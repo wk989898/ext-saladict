@@ -291,6 +291,10 @@ module.exports = {
         .module
           .rule('compile') // add ts extensions for babel ect
             .test(/\.(mjs|jsx|js|ts|tsx)$/)
+            .include
+              .add(path.join(__dirname, 'src'))
+              .add(path.join(__dirname, 'node_modules/openai'))
+              .end()
             .end()
           .end()
         .resolve

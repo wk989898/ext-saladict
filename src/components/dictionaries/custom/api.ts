@@ -1,3 +1,8 @@
+// Keep runtime dependency as CommonJS require so TypeScript 3.8 does not
+// parse modern SDK type declarations from node_modules.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const OpenAI = require('openai')
+
 const DEFAULT_BASE_URL = 'https://api.openai.com'
 
 type OpenAIAPIType = 'responses' | 'chat-completions'
@@ -18,15 +23,28 @@ interface TextRequestResult {
   endpoint: string
 }
 
-interface PostResult {
-  ok: boolean
+interface ParsedSDKError {
   status: number
-  data: any
+  error: string
 }
 
 function normalizeBaseURL(baseURL?: string): string {
   const raw = (baseURL || DEFAULT_BASE_URL).trim()
   return raw.replace(/\/+$/, '')
+}
+
+function getClientBaseURL(baseURL?: string): string {
+  const normalized = normalizeBaseURL(baseURL)
+  if (/\/responses$/i.test(normalized)) {
+    return normalized.replace(/\/responses$/i, '')
+  }
+  if (/\/chat\/completions$/i.test(normalized)) {
+    return normalized.replace(/\/chat\/completions$/i, '')
+  }
+  if (/\/v1$/i.test(normalized)) {
+    return normalized
+  }
+  return `${normalized}/v1`
 }
 
 export function getResponsesEndpoint(baseURL?: string): string {
@@ -55,6 +73,17 @@ export function getChatCompletionsEndpoint(baseURL?: string): string {
     return `${normalized}/chat/completions`
   }
   return `${normalized}/v1/chat/completions`
+}
+
+function createOpenAIClient(
+  options: Pick<TextRequestOptions, 'baseURL' | 'apiKey'>
+): any {
+  return new OpenAI({
+    apiKey: options.apiKey,
+    baseURL: getClientBaseURL(options.baseURL),
+    dangerouslyAllowBrowser: true,
+    maxRetries: 0
+  })
 }
 
 export function extractResponsesText(data: any): string {
@@ -125,6 +154,20 @@ export function extractResponsesError(data: any): string {
   return ''
 }
 
+function parseSDKError(rawError: any): ParsedSDKError {
+  const status = typeof rawError?.status === 'number' ? rawError.status : 0
+  const error =
+    extractResponsesError(rawError?.error) ||
+    extractResponsesError(rawError) ||
+    (typeof rawError?.message === 'string' ? rawError.message : '') ||
+    (status ? `HTTP ${status}` : 'NETWORK_ERROR')
+
+  return {
+    status,
+    error
+  }
+}
+
 function shouldRetryWithStructuredInput(status: number, error: string): boolean {
   if (status !== 400 && status !== 422) return false
   return /input/i.test(error)
@@ -141,7 +184,9 @@ function shouldFallbackToChat(status: number, error: string): boolean {
     lowered.includes('responses is not supported') ||
     lowered.includes('/responses is not supported') ||
     (lowered.includes('/v1/responses') && lowered.includes('not supported')) ||
-    (lowered.includes('responses') && lowered.includes('please use') && lowered.includes('chat/completions')) ||
+    (lowered.includes('responses') &&
+      lowered.includes('please use') &&
+      lowered.includes('chat/completions')) ||
     lowered.includes('please use /v1/chat/completions') ||
     lowered.includes('use /v1/chat/completions') ||
     lowered.includes('not implemented') ||
@@ -162,157 +207,106 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function parseResponseBody(response: Response): Promise<any> {
-  const contentType = response.headers.get('content-type') || ''
-  if (contentType.includes('application/json')) {
-    try {
-      return await response.json()
-    } catch {
-      return null
-    }
-  }
-
-  try {
-    const text = await response.text()
-    if (!text) return null
-    try {
-      return JSON.parse(text)
-    } catch {
-      return text
-    }
-  } catch {
-    return null
-  }
-}
-
-async function postJSON(
-  endpoint: string,
-  apiKey: string,
-  body: Record<string, any>
-): Promise<PostResult> {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    },
-    body: JSON.stringify(body)
-  })
-
-  const data = await parseResponseBody(response)
-  return {
-    ok: response.ok,
-    status: response.status,
-    data
-  }
-}
-
 async function requestViaResponses(
   options: TextRequestOptions
 ): Promise<TextRequestResult> {
   const endpoint = getResponsesEndpoint(options.baseURL)
+  const client = createOpenAIClient(options)
 
-  // Align with openai-node common usage: responses.create({ model, input: "..." })
   const simplePayload = {
     model: options.model,
     input: options.prompt
   }
 
-  // Structured input for providers requiring explicit input_text shape.
   const structuredPayload = {
     model: options.model,
     input: [
       {
-        role: 'user',
-        content: [{ type: 'input_text', text: options.prompt }]
+        role: 'user' as const,
+        content: [{ type: 'input_text' as const, text: options.prompt }]
       }
     ]
   }
 
-  let response: PostResult
-  try {
-    response = await postJSON(endpoint, options.apiKey, simplePayload)
-  } catch (e) {
-    return {
-      ok: false,
-      status: 0,
-      error: e && e.message ? e.message : 'NETWORK_ERROR',
-      api: 'responses',
-      endpoint
-    }
-  }
-  let text = response.ok ? extractResponsesText(response.data) : ''
-  let error = response.ok ? '' : extractResponsesError(response.data) || `HTTP ${response.status}`
+  let data: any = null
+  let status = 0
+  let error = ''
 
-  if (!response.ok && shouldRetryResponses(response.status, error)) {
+  try {
+    data = await client.responses.create(simplePayload)
+  } catch (e) {
+    const parsed = parseSDKError(e)
+    status = parsed.status
+    error = parsed.error
+  }
+
+  if (!data && shouldRetryResponses(status, error)) {
     await sleep(300)
     try {
-      response = await postJSON(endpoint, options.apiKey, simplePayload)
-      text = response.ok ? extractResponsesText(response.data) : ''
-      error = response.ok
-        ? ''
-        : extractResponsesError(response.data) || `HTTP ${response.status}`
+      data = await client.responses.create(simplePayload)
+      status = 0
+      error = ''
     } catch (e) {
-      return {
-        ok: false,
-        status: 0,
-        error: e && e.message ? e.message : 'NETWORK_ERROR',
-        api: 'responses',
-        endpoint
-      }
+      const parsed = parseSDKError(e)
+      status = parsed.status
+      error = parsed.error
     }
   }
 
-  if (response.ok && text) {
-    return {
-      ok: true,
-      status: response.status,
-      text,
-      api: 'responses',
-      endpoint
-    }
-  }
-
-  error = error || extractResponsesError(response.data) || `HTTP ${response.status}`
-  if (response.ok && !text) {
-    error = 'Empty text in response'
-  }
-
-  // Some gateways only accept structured `input` format.
-  if (shouldRetryWithStructuredInput(response.status, error)) {
-    try {
-      response = await postJSON(endpoint, options.apiKey, structuredPayload)
-    } catch (e) {
-      return {
-        ok: false,
-        status: 0,
-        error: e && e.message ? e.message : 'NETWORK_ERROR',
-        api: 'responses',
-        endpoint
-      }
-    }
-    text = response.ok ? extractResponsesText(response.data) : ''
-    if (response.ok && text) {
+  if (data) {
+    const text = extractResponsesText(data)
+    if (text) {
       return {
         ok: true,
-        status: response.status,
+        status: status || 200,
         text,
         api: 'responses',
         endpoint
       }
     }
+    return {
+      ok: false,
+      status: status || 200,
+      error: 'Empty text in response',
+      api: 'responses',
+      endpoint
+    }
+  }
 
-    error = extractResponsesError(response.data) || `HTTP ${response.status}`
-    if (response.ok && !text) {
-      error = 'Empty text in response'
+  if (shouldRetryWithStructuredInput(status, error)) {
+    try {
+      data = await client.responses.create(structuredPayload)
+    } catch (e) {
+      const parsed = parseSDKError(e)
+      status = parsed.status
+      error = parsed.error
+    }
+
+    if (data) {
+      const text = extractResponsesText(data)
+      if (text) {
+        return {
+          ok: true,
+          status: status || 200,
+          text,
+          api: 'responses',
+          endpoint
+        }
+      }
+      return {
+        ok: false,
+        status: status || 200,
+        error: 'Empty text in response',
+        api: 'responses',
+        endpoint
+      }
     }
   }
 
   return {
     ok: false,
-    status: response.status,
-    error,
+    status,
+    error: error || `HTTP ${status}`,
     api: 'responses',
     endpoint
   }
@@ -322,43 +316,40 @@ async function requestViaChatCompletions(
   options: TextRequestOptions
 ): Promise<TextRequestResult> {
   const endpoint = getChatCompletionsEndpoint(options.baseURL)
-  const payload = {
-    model: options.model,
-    messages: [{ role: 'user', content: options.prompt }]
-  }
+  const client = createOpenAIClient(options)
 
-  let response: PostResult
   try {
-    response = await postJSON(endpoint, options.apiKey, payload)
-  } catch (e) {
-    return {
-      ok: false,
-      status: 0,
-      error: e && e.message ? e.message : 'NETWORK_ERROR',
-      api: 'chat-completions',
-      endpoint
+    const data = await client.chat.completions.create({
+      model: options.model,
+      messages: [{ role: 'user', content: options.prompt }]
+    })
+    const text = extractChatCompletionsText(data)
+    if (!text) {
+      return {
+        ok: false,
+        status: 200,
+        error: 'Empty text in response',
+        api: 'chat-completions',
+        endpoint
+      }
     }
-  }
-  const text = response.ok ? extractChatCompletionsText(response.data) : ''
-  if (response.ok && text) {
+
     return {
       ok: true,
-      status: response.status,
+      status: 200,
       text,
       api: 'chat-completions',
       endpoint
     }
-  }
-
-  const error = response.ok
-    ? 'Empty text in response'
-    : extractResponsesError(response.data) || `HTTP ${response.status}`
-  return {
-    ok: false,
-    status: response.status,
-    error,
-    api: 'chat-completions',
-    endpoint
+  } catch (e) {
+    const parsed = parseSDKError(e)
+    return {
+      ok: false,
+      status: parsed.status,
+      error: parsed.error,
+      api: 'chat-completions',
+      endpoint
+    }
   }
 }
 
