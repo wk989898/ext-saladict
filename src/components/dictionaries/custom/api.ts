@@ -131,18 +131,32 @@ function shouldRetryWithSimpleInput(status: number, error: string): boolean {
 }
 
 function shouldFallbackToChat(status: number, error: string): boolean {
-  if (status === 0) return true
-  if (status >= 500) return true
+  const lowered = error.toLowerCase()
   if (status === 404 || status === 405 || status === 501) return true
 
-  const lowered = error.toLowerCase()
+  // Only fallback when responses endpoint is clearly unavailable.
+  // Do NOT fallback on generic upstream/5xx failures, because many gateways
+  // support only /v1/responses and reject /v1/chat/completions.
   return (
-    lowered.includes('upstream request failed') ||
+    lowered.includes('responses is not supported') ||
+    lowered.includes('/responses is not supported') ||
+    lowered.includes('unsupported protocol') ||
     lowered.includes('not implemented') ||
-    lowered.includes('unsupported') ||
-    lowered.includes('responses') ||
-    lowered.includes('not found')
+    lowered.includes('route not found') ||
+    lowered.includes('unknown endpoint') ||
+    lowered.includes('unknown path')
   )
+}
+
+function shouldRetryResponses(status: number, error: string): boolean {
+  if (status === 429 || status === 502 || status === 503 || status === 504) {
+    return true
+  }
+  return /upstream request failed|temporarily unavailable|timeout/i.test(error)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 async function parseResponseBody(response: Response): Promise<any> {
@@ -220,6 +234,27 @@ async function requestViaResponses(
     }
   }
   let text = response.ok ? extractResponsesText(response.data) : ''
+  let error = response.ok ? '' : extractResponsesError(response.data) || `HTTP ${response.status}`
+
+  if (!response.ok && shouldRetryResponses(response.status, error)) {
+    await sleep(300)
+    try {
+      response = await postJSON(endpoint, options.apiKey, structuredPayload)
+      text = response.ok ? extractResponsesText(response.data) : ''
+      error = response.ok
+        ? ''
+        : extractResponsesError(response.data) || `HTTP ${response.status}`
+    } catch (e) {
+      return {
+        ok: false,
+        status: 0,
+        error: e && e.message ? e.message : 'NETWORK_ERROR',
+        api: 'responses',
+        endpoint
+      }
+    }
+  }
+
   if (response.ok && text) {
     return {
       ok: true,
@@ -230,7 +265,7 @@ async function requestViaResponses(
     }
   }
 
-  let error = extractResponsesError(response.data) || `HTTP ${response.status}`
+  error = error || extractResponsesError(response.data) || `HTTP ${response.status}`
   if (response.ok && !text) {
     error = 'Empty text in response'
   }
