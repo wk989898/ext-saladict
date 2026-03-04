@@ -125,7 +125,7 @@ export function extractResponsesError(data: any): string {
   return ''
 }
 
-function shouldRetryWithSimpleInput(status: number, error: string): boolean {
+function shouldRetryWithStructuredInput(status: number, error: string): boolean {
   if (status !== 400 && status !== 422) return false
   return /input/i.test(error)
 }
@@ -140,7 +140,10 @@ function shouldFallbackToChat(status: number, error: string): boolean {
   return (
     lowered.includes('responses is not supported') ||
     lowered.includes('/responses is not supported') ||
-    lowered.includes('unsupported protocol') ||
+    (lowered.includes('/v1/responses') && lowered.includes('not supported')) ||
+    (lowered.includes('responses') && lowered.includes('please use') && lowered.includes('chat/completions')) ||
+    lowered.includes('please use /v1/chat/completions') ||
+    lowered.includes('use /v1/chat/completions') ||
     lowered.includes('not implemented') ||
     lowered.includes('route not found') ||
     lowered.includes('unknown endpoint') ||
@@ -210,7 +213,13 @@ async function requestViaResponses(
 ): Promise<TextRequestResult> {
   const endpoint = getResponsesEndpoint(options.baseURL)
 
-  // Align with openai-node usage: responses.create({ model, input: [{...}] })
+  // Align with openai-node common usage: responses.create({ model, input: "..." })
+  const simplePayload = {
+    model: options.model,
+    input: options.prompt
+  }
+
+  // Structured input for providers requiring explicit input_text shape.
   const structuredPayload = {
     model: options.model,
     input: [
@@ -223,7 +232,7 @@ async function requestViaResponses(
 
   let response: PostResult
   try {
-    response = await postJSON(endpoint, options.apiKey, structuredPayload)
+    response = await postJSON(endpoint, options.apiKey, simplePayload)
   } catch (e) {
     return {
       ok: false,
@@ -239,7 +248,7 @@ async function requestViaResponses(
   if (!response.ok && shouldRetryResponses(response.status, error)) {
     await sleep(300)
     try {
-      response = await postJSON(endpoint, options.apiKey, structuredPayload)
+      response = await postJSON(endpoint, options.apiKey, simplePayload)
       text = response.ok ? extractResponsesText(response.data) : ''
       error = response.ok
         ? ''
@@ -270,13 +279,10 @@ async function requestViaResponses(
     error = 'Empty text in response'
   }
 
-  if (shouldRetryWithSimpleInput(response.status, error)) {
-    const simplePayload = {
-      model: options.model,
-      input: options.prompt
-    }
+  // Some gateways only accept structured `input` format.
+  if (shouldRetryWithStructuredInput(response.status, error)) {
     try {
-      response = await postJSON(endpoint, options.apiKey, simplePayload)
+      response = await postJSON(endpoint, options.apiKey, structuredPayload)
     } catch (e) {
       return {
         ok: false,
