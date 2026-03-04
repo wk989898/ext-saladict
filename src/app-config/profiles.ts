@@ -43,6 +43,7 @@ export function _getDefaultProfile(id?: string) {
         'urban',
         'vocabulary',
         'caiyun',
+        'custom',
         'youdaotrans',
         'zdic',
         'guoyu',
@@ -204,6 +205,7 @@ export function translation(): ProfileStorage {
     'tencent',
     'baidu',
     'caiyun',
+    'custom',
     'youdaotrans',
     'zdic',
     'guoyu',
@@ -227,6 +229,7 @@ export function nihongo(): ProfileStorage {
     'google',
     'tencent',
     'caiyun',
+    'custom',
     'googledict',
     'wikipedia'
   ]

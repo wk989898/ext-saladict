@@ -116,6 +116,7 @@ export function mergeProfile(
           const machineDicts: DictID[] = [
             'baidu',
             'caiyun',
+            'custom',
             'google',
             'sogou',
             'tencent',

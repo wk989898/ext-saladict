@@ -8,6 +8,7 @@ import caiyun from '@/components/dictionaries/caiyun/config'
 import cambridge from '@/components/dictionaries/cambridge/config'
 import cnki from '@/components/dictionaries/cnki/config'
 import cobuild from '@/components/dictionaries/cobuild/config'
+import custom from '@/components/dictionaries/custom/config'
 import etymonline from '@/components/dictionaries/etymonline/config'
 import eudic from '@/components/dictionaries/eudic/config'
 import google from '@/components/dictionaries/google/config'
@@ -48,6 +49,7 @@ export const defaultAllDicts = {
   cambridge: cambridge(),
   cnki: cnki(),
   cobuild: cobuild(),
+  custom: custom(),
   etymonline: etymonline(),
   eudic: eudic(),
   google: google(),
