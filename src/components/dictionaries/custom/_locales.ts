@@ -1,7 +1,7 @@
 import { getMachineLocales } from '../locales'
 
 export const locales = getMachineLocales({
-  en: 'Custom OpenAI',
-  'zh-CN': '自定义 OpenAI',
-  'zh-TW': '自定義 OpenAI'
+  en: 'OpenAI Compatible',
+  'zh-CN': 'OpenAI 兼容',
+  'zh-TW': 'OpenAI 相容'
 })

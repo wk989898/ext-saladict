@@ -10,6 +10,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { StaticSpeakerContainer } from '@/components/Speaker'
 
 const dictContentStyles = require('./DictItemContent.shadow.scss').toString()
+const ISSUE_URL = 'https://github.com/wk989898/ext-saladict/issues'
 
 export interface DictItemBodyProps {
   dictID: DictID
@@ -108,7 +109,7 @@ function DictRenderError() {
     <p style={{ textAlign: 'center' }}>
       Render error. Please{' '}
       <a
-        href="https://github.com/crimx/ext-saladict/issues"
+        href={ISSUE_URL}
         target="_blank"
         rel="nofollow noopener noreferrer"
       >

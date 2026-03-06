@@ -151,7 +151,11 @@ export function mergeConfig(
       case 'dictAuth':
         forEach(oldConfig.dictAuth, (auth, dictID) => {
           forEach(auth, (value, key) => {
-            if (isString(value)) {
+            const baseAuth = get(base, ['dictAuth', dictID], {})
+            if (
+              isString(value) &&
+              Object.prototype.hasOwnProperty.call(baseAuth, key)
+            ) {
               set(base, ['dictAuth', dictID, key], value)
             }
           })

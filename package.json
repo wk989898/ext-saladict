@@ -1,6 +1,6 @@
 {
   "name": "saladict",
-  "version": "7.21.9",
+  "version": "7.21.13",
   "description": "Chrome extension and Firefox WebExtension; inline translator powered by multiple online dictionaries",
   "private": true,
   "scripts": {
@@ -36,13 +36,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/crimx/ext-saladict"
+    "url": "https://github.com/wk989898/ext-saladict"
   },
-  "homepage": "https://github.com/crimx/ext-saladict",
+  "homepage": "https://github.com/wk989898/ext-saladict",
   "license": "MIT",
   "readmeFilename": "README.md",
   "bugs": {
-    "url": "https://github.com/crimx/ext-saladict/issues"
+    "url": "https://github.com/wk989898/ext-saladict/issues"
   },
   "config": {
     "commitizen": {
@@ -88,7 +88,6 @@
     "node-html-parser": "^7.0.2",
     "normalize-scss": "^7.0.1",
     "observable-hooks": "^3.0.0",
-    "openai": "^6.25.0",
     "pako": "^1.0.10",
     "qrcode.react": "^0.9.3",
     "react": "^16.10.0",

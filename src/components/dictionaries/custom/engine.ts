@@ -9,7 +9,8 @@ import {
 } from '@/components/MachineTrans/engine'
 import { CustomLanguage } from './config'
 import {
-  requestOpenAIText
+  requestOpenAIText,
+  resolveCustomAuth
 } from '@/components/dictionaries/custom/api'
 
 const DEFAULT_BASE_URL = 'https://api.openai.com'
@@ -20,6 +21,10 @@ type OpenAIResponsesResult = MachineTranslateResult<'custom'>
 export const getTranslator = memoizeOne(() => new Google({ env: 'ext' }))
 
 export const getSrcPage: GetSrcPageFunction = (_text, config) => {
+  const resolved = resolveCustomAuth(config.dictAuth.custom)
+  if (resolved.ok && resolved.baseURL) {
+    return resolved.baseURL
+  }
   return config.dictAuth.custom.baseURL || DEFAULT_DOC_URL
 }
 
@@ -27,10 +32,17 @@ export const search: SearchFunction<
   OpenAIResponsesResult,
   MachineTranslatePayload<CustomLanguage>
 > = async (rawText, config, profile, payload) => {
-  const { apiKey, model, baseURL, mode } = config.dictAuth.custom
+  const { apiKey, model, baseURL, accounts, activeAccount } = config.dictAuth.custom
   const translator = getTranslator()
+  const resolved = resolveCustomAuth({
+    baseURL,
+    apiKey,
+    model,
+    accounts,
+    activeAccount
+  })
 
-  if (!apiKey || !model || mode !== 'openai-responses') {
+  if (!resolved.ok || !resolved.apiKey || !resolved.model) {
     return machineResult(
       {
         result: {
@@ -57,14 +69,17 @@ export const search: SearchFunction<
 
   const prompt = `Translate the following text from ${sl} to ${tl}. Preserve original meaning and line breaks. Return only the translated text.\n\n${text}`
   const result = await requestOpenAIText({
-    baseURL: baseURL || DEFAULT_BASE_URL,
-    apiKey,
-    model,
+    baseURL: resolved.baseURL || baseURL || DEFAULT_BASE_URL,
+    apiKey: resolved.apiKey,
+    model: resolved.model,
     prompt
   })
 
   if (!result.ok || !result.text) {
-    throw new Error('NETWORK_ERROR')
+    const detail = [result.error, result.endpoint, result.requestID]
+      .filter(Boolean)
+      .join(' | ')
+    throw new Error(detail || 'NETWORK_ERROR')
   }
   const translated = result.text
 

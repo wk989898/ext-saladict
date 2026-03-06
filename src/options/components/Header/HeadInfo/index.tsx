@@ -6,6 +6,8 @@ import { AckList } from './AckList'
 
 import './_style.scss'
 
+const ISSUE_URL = 'https://github.com/wk989898/ext-saladict/issues'
+
 export const HeadInfo: FC = () => {
   const { t } = useTranslate('options')
   return (
@@ -46,16 +48,7 @@ export const HeadInfo: FC = () => {
       </li>
       <li>
         <a
-          href="https://saladict.crimx.com/support.html"
-          target="_blank"
-          rel="nofollow noopener noreferrer"
-        >
-          💪{t('headInfo.donate')}
-        </a>
-      </li>
-      <li>
-        <a
-          href="https://github.com/crimx/ext-saladict/issues"
+          href={ISSUE_URL}
           target="_blank"
           rel="nofollow noopener noreferrer"
         >

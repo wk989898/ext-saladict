@@ -1,9 +1,9 @@
 export const auth = {
-  provider: 'third-party',
-  mode: 'openai-responses',
   baseURL: '',
   apiKey: '',
-  model: ''
+  model: '',
+  accounts: '',
+  activeAccount: ''
 }
 
 export const url = 'https://platform.openai.com/docs/api-reference/responses'
